@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Poker AI - Solveur Exploitant Flop & Turn</title>
+  <style>
+    :root {
+      --bg: #0f172a; --card-bg: #1e293b; --accent: #10b981;
+      --text: #f8fafc; --muted: #94a3b8; --border: #334155;
+    }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    .header-bar {
+      max-width: 1100px; margin: 0 auto 18px auto; display: flex; justify-content: space-between;
+      align-items: center; background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 20px;
+    }
+    .street-tabs { display: flex; gap: 10px; }
+    .tab-btn {
+      padding: 9px 18px; border-radius: 8px; border: 1px solid var(--border);
+      background: #0f172a; color: var(--muted); font-weight: bold; cursor: pointer; font-size: 0.92rem;
+    }
+    .tab-btn.active { background: var(--accent); color: #064e3b; border-color: var(--accent); }
+    .container { max-width: 1100px; margin: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    h2 { margin-top: 0; font-size: 1.1rem; color: var(--accent); }
+    .slots { display: flex; gap: 10px; margin-bottom: 16px; }
+    .slot {
+      width: 54px; height: 76px; border: 2px dashed var(--border); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.15rem;
+      cursor: pointer; background: #0f172a;
+    }
+    .slot.active { border-color: var(--accent); box-shadow: 0 0 8px rgba(16,185,129,0.4); }
+    .slot.filled { border-style: solid; background: #f8fafc; color: #0f172a; }
+    .deck { display: grid; grid-template-columns: repeat(13, 1fr); gap: 4px; margin-top: 12px; }
+    .card-btn {
+      padding: 6px 2px; border: 1px solid var(--border); border-radius: 4px; background: #f8fafc;
+      font-weight: bold; cursor: pointer; font-size: 0.85rem; text-align: center;
+    }
+    .card-btn.used { opacity: 0.25; pointer-events: none; }
+    .suit-h, .suit-d { color: #dc2626; }
+    .suit-s, .suit-c { color: #0f172a; }
+    .grid-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--muted); gap: 4px; }
+    input, select {
+      padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+      background: #0f172a; color: var(--text); font-size: 0.95rem;
+    }
+    .presets { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .preset-btn {
+      background: #334155; color: var(--text); border: none; padding: 6px 10px;
+      border-radius: 6px; cursor: pointer; font-size: 0.8rem;
+    }
+    .preset-btn:hover { background: #475569; }
+    button.run-btn {
+      width: 100%; padding: 12px; background: var(--accent); color: #064e3b;
+      font-weight: bold; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem;
+    }
+    button.run-btn:hover { filter: brightness(1.1); }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.9rem; }
+    th, td { padding: 10px 8px; text-align: right; border-bottom: 1px solid var(--border); }
+    th:first-child, td:first-child { text-align: left; font-weight: bold; }
+    tr.best { background: rgba(16, 185, 129, 0.18); }
+    .verdict { margin-top: 14px; padding: 12px; border-radius: 8px; background: #0f172a; border-left: 4px solid var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="header-bar">
+    <div>
+      <strong style="font-size:1.15rem;">Poker AI — Solveur Exploitant Winamax</strong>
+      <div style="font-size:0.82rem; color:var(--muted);">Modèles LightGBM + Simulation Monte Carlo (SRP Heads-Up)</div>
+    </div>
+    <div class="street-tabs">
+      <button id="tab-flop" class="tab-btn active" onclick="switchStreet('flop')">1. Flop (C-Bet)</button>
+      <button id="tab-turn" class="tab-btn" onclick="switchStreet('turn')">2. Turn (2e Barrel)</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="panel">
+      <h2>1. Sélection des cartes (Clique sur un emplacement puis sur une carte)</h2>
+      <div style="display:flex; gap:18px; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:0.85rem; color:var(--muted); margin-bottom:6px;">Ta main (Hero)</div>
+          <div class="slots">
+            <div class="slot active" data-idx="0" onclick="selectSlot(0)">?</div>
+            <div class="slot" data-idx="1" onclick="selectSlot(1)">?</div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:0.85rem; color:var(--muted); margin-bottom:6px;">Flop</div>
+          <div class="slots">
+            <div class="slot" data-idx="2" onclick="selectSlot(2)">?</div>
+            <div class="slot" data-idx="3" onclick="selectSlot(3)">?</div>
+            <div class="slot" data-idx="4" onclick="selectSlot(4)">?</div>
+          </div>
+        </div>
+        <div id="turn-slot-container" style="display:none;">
+          <div style="font-size:0.85rem; color:var(--accent); margin-bottom:6px; font-weight:bold;">Turn</div>
+          <div class="slots">
+            <div class="slot" data-idx="5" onclick="selectSlot(5)">?</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="deck" class="deck"></div>
+      <button class="preset-btn" style="margin-top:10px;" onclick="resetCards()">Réinitialiser les cartes</button>
+
+      <h2 style="margin-top:20px;">2. Contexte & Profil de Vilain (HUD)</h2>
+      <div class="presets">
+        <button class="preset-btn" onclick="applyPreset('pool')">Pool Moyen</button>
+        <button class="preset-btn" onclick="applyPreset('station')">Calling Station</button>
+        <button class="preset-btn" onclick="applyPreset('nit')">Nit / Serré</button>
+        <button class="preset-btn" onclick="applyPreset('aggro')">Reg Aggro</button>
+      </div>
+
+      <div class="grid-inputs">
+        <label>Position Hero
+          <select id="is_ip">
+            <option value="1">En Position (IP)</option>
+            <option value="0">Hors de Position (OOP)</option>
+          </select>
+        </label>
+        <label id="pot-label">Pot au flop (bb)<input type="number" id="pot_bb" value="6.5" step="0.5" /></label>
+        <label>Stack effectif (bb)<input type="number" id="eff_stack_bb" value="93.5" step="1" /></label>
+        <label>Action que tu as jouée
+          <select id="user_action">
+            <option value="Check">Check</option>
+            <option value="Bet 33%">Bet 33%</option>
+            <option value="Bet 50%" selected>Bet 50%</option>
+            <option value="Bet 75%">Bet 75%</option>
+          </select>
+        </label>
+        <label>Vilain VPIP (%)<input type="number" id="v_vpip" value="27.4" step="0.5" /></label>
+        <label>Vilain PFR (%)<input type="number" id="v_pfr" value="16.6" step="0.5" /></label>
+        <label id="fold-label">Vilain Fold to C-bet (%)<input type="number" id="v_fold" value="45.4" step="1" /></label>
+        <label id="raise-label">Vilain Raise C-bet (%)<input type="number" id="v_raise" value="8.0" step="0.5" /></label>
+      </div>
+
+      <button class="run-btn" onclick="evaluateSpot()">Analyser le spot avec l'IA</button>
+    </div>
+
+    <div class="panel">
+      <h2 id="diag-title">3. Diagnostic IA & Espérance de Gain (Flop)</h2>
+      <div id="status" style="color:var(--muted); font-size:0.9rem;">
+        Sélectionne tes cartes puis clique sur « Analyser le spot avec l'IA ».
+      </div>
+      <div id="verdict-box" class="verdict" style="display:none;"></div>
+      <table id="results-table" style="display:none;">
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Mise</th>
+            <th>Fold</th>
+            <th>Call</th>
+            <th>Raise</th>
+            <th>Équité</th>
+            <th>EV (bb)</th>
+          </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const RANKS = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"];
+    const SUITS = [
+      { code: "s", sym: "♠", cls: "suit-s" },
+      { code: "h", sym: "♥", cls: "suit-h" },
+      { code: "d", sym: "♦", cls: "suit-d" },
+      { code: "c", sym: "♣", cls: "suit-c" }
+    ];
+
+    let currentStreet = "flop";
+    let selectedCards = [null, null, null, null, null, null];
+    let activeSlot = 0;
+
+    function switchStreet(street) {
+      currentStreet = street;
+      document.getElementById("tab-flop").classList.toggle("active", street === "flop");
+      document.getElementById("tab-turn").classList.toggle("active", street === "turn");
+      document.getElementById("turn-slot-container").style.display = street === "turn" ? "block" : "none";
+
+      if (street === "flop") {
+        selectedCards[5] = null;
+        if (activeSlot === 5) selectSlot(0);
+        document.getElementById("pot-label").childNodes[0].textContent = "Pot au flop (bb)";
+        document.getElementById("pot_bb").value = "6.5";
+        document.getElementById("eff_stack_bb").value = "93.5";
+        document.getElementById("fold-label").childNodes[0].textContent = "Vilain Fold to C-bet (%)";
+        document.getElementById("raise-label").childNodes[0].textContent = "Vilain Raise C-bet (%)";
+        document.getElementById("v_fold").value = "45.4";
+        document.getElementById("v_raise").value = "8.0";
+        document.getElementById("diag-title").textContent = "3. Diagnostic IA & Espérance de Gain (Flop)";
+      } else {
+        document.getElementById("pot-label").childNodes[0].textContent = "Pot à la Turn (bb)";
+        document.getElementById("pot_bb").value = "11.0";
+        document.getElementById("eff_stack_bb").value = "89.0";
+        document.getElementById("fold-label").childNodes[0].textContent = "Vilain Fold 2e Barrel (%)";
+        document.getElementById("raise-label").childNodes[0].textContent = "Vilain Raise Turn (%)";
+        document.getElementById("v_fold").value = "39.0";
+        document.getElementById("v_raise").value = "8.2";
+        document.getElementById("diag-title").textContent = "3. Diagnostic IA & Espérance de Gain (2e Barrel Turn)";
+        if (selectedCards.slice(0, 5).every(c => c !== null) && !selectedCards[5]) {
+          selectSlot(5);
+        }
+      }
+      updateSlotsUI();
+    }
+
+    function formatCard(code) {
+      if (!code) return "?";
+      const s = SUITS.find(x => x.code === code[1]);
+      return `<span class="${s.cls}">${code[0]}${s.sym}</span>`;
+    }
+
+    function renderDeck() {
+      const deckEl = document.getElementById("deck");
+      deckEl.innerHTML = "";
+      SUITS.forEach(s => {
+        RANKS.forEach(r => {
+          const code = r + s.code;
+          const btn = document.createElement("button");
+          btn.className = `card-btn ${s.cls}` + (selectedCards.includes(code) ? " used" : "");
+          btn.innerHTML = r + s.sym;
+          btn.onclick = () => pickCard(code);
+          deckEl.appendChild(btn);
+        });
+      });
+    }
+
+    function selectSlot(idx) {
+      activeSlot = idx;
+      document.querySelectorAll(".slot").forEach(el => {
+        el.classList.toggle("active", parseInt(el.dataset.idx) === idx);
+      });
+    }
+
+    function pickCard(code) {
+      selectedCards[activeSlot] = code;
+      updateSlotsUI();
+      const maxSlots = currentStreet === "turn" ? 6 : 5;
+      const nextEmpty = selectedCards.slice(0, maxSlots).findIndex(c => c === null);
+      if (nextEmpty !== -1) selectSlot(nextEmpty);
+    }
+
+    function updateSlotsUI() {
+      document.querySelectorAll(".slot").forEach(el => {
+        const idx = parseInt(el.dataset.idx);
+        const c = selectedCards[idx];
+        el.innerHTML = formatCard(c);
+        el.classList.toggle("filled", c !== null);
+      });
+      renderDeck();
+    }
+
+    function resetCards() {
+      selectedCards = [null, null, null, null, null, null];
+      selectSlot(0);
+      updateSlotsUI();
+    }
+
+    function applyPreset(type) {
+      const isTurn = currentStreet === "turn";
+      const profiles = {
+        pool:    { vpip: 27.4, pfr: 16.6, fold: isTurn ? 39.0 : 45.4, raise: isTurn ? 8.2 : 8.0 },
+        station: { vpip: 48.0, pfr: 12.0, fold: isTurn ? 22.0 : 28.0, raise: 5.0 },
+        nit:     { vpip: 16.0, pfr: 13.0, fold: isTurn ? 54.0 : 62.0, raise: 7.0 },
+        aggro:   { vpip: 24.0, pfr: 20.0, fold: isTurn ? 35.0 : 42.0, raise: isTurn ? 15.0 : 14.0 }
+      };
+      const p = profiles[type];
+      document.getElementById("v_vpip").value = p.vpip;
+      document.getElementById("v_pfr").value = p.pfr;
+      document.getElementById("v_fold").value = p.fold;
+      document.getElementById("v_raise").value = p.raise;
+    }
+
+    async function evaluateSpot() {
+      const needed = currentStreet === "turn" ? 6 : 5;
+      if (selectedCards.slice(0, needed).includes(null)) {
+        alert(currentStreet === "turn"
+          ? "Choisis tes 2 cartes, les 3 cartes du flop et la carte de Turn."
+          : "Choisis tes 2 cartes et les 3 cartes du flop.");
+        return;
+      }
+
+      document.getElementById("status").textContent = "Simulation Monte Carlo + prédiction LightGBM en cours...";
+
+      const endpoint = currentStreet === "turn" ? "/api/evaluate_turn" : "/api/evaluate";
+      const payload = currentStreet === "turn"
+        ? {
+            hero_hand: [selectedCards[0], selectedCards[1]],
+            flop: [selectedCards[2], selectedCards[3], selectedCards[4]],
+            turn_card: selectedCards[5],
+            pot_bb: parseFloat(document.getElementById("pot_bb").value),
+            eff_stack_bb: parseFloat(document.getElementById("eff_stack_bb").value),
+            is_ip: parseInt(document.getElementById("is_ip").value),
+            villain_vpip: parseFloat(document.getElementById("v_vpip").value),
+            villain_pfr: parseFloat(document.getElementById("v_pfr").value),
+            villain_fold_turn: parseFloat(document.getElementById("v_fold").value),
+            villain_raise_turn: parseFloat(document.getElementById("v_raise").value)
+          }
+        : {
+            hero_hand: [selectedCards[0], selectedCards[1]],
+            flop: [selectedCards[2], selectedCards[3], selectedCards[4]],
+            pot_bb: parseFloat(document.getElementById("pot_bb").value),
+            eff_stack_bb: parseFloat(document.getElementById("eff_stack_bb").value),
+            is_ip: parseInt(document.getElementById("is_ip").value),
+            villain_vpip: parseFloat(document.getElementById("v_vpip").value),
+            villain_pfr: parseFloat(document.getElementById("v_pfr").value),
+            villain_fold_cbet: parseFloat(document.getElementById("v_fold").value),
+            villain_raise_cbet: parseFloat(document.getElementById("v_raise").value)
+          };
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.detail); return; }
+
+      document.getElementById("status").textContent = "";
+      const tbody = document.getElementById("results-body");
+      tbody.innerHTML = "";
+
+      const userAct = document.getElementById("user_action").value;
+      let userRow = null;
+
+      data.results.forEach(r => {
+        if (r["Action"] === userAct) userRow = r;
+        const tr = document.createElement("tr");
+        if (r["Action"] === data.best_action) tr.className = "best";
+        tr.innerHTML = `
+          <td>${r["Action"]} ${r["Action"] === data.best_action ? "★" : ""}</td>
+          <td>${r["Mise (bb)"].toFixed(2)} bb</td>
+          <td>${r["P(Fold)"].toFixed(1)}%</td>
+          <td>${r["P(Call)"].toFixed(1)}%</td>
+          <td>${r["P(Raise)"].toFixed(1)}%</td>
+          <td>${r["Équité vs Call"].toFixed(1)}%</td>
+          <td><strong>${r["EV (bb)"].toFixed(2)} bb</strong></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById("results-table").style.display = "table";
+      const verdictEl = document.getElementById("verdict-box");
+      verdictEl.style.display = "block";
+
+      const diff = userRow ? (userRow["EV (bb)"] - data.best_ev).toFixed(2) : "0.00";
+      const isOptimal = userAct === data.best_action || Math.abs(parseFloat(diff)) < 0.05;
+      verdictEl.innerHTML = isOptimal
+        ? `<strong>Ton play (${userAct}) est optimal !</strong> EV : <strong>${userRow["EV (bb)"].toFixed(2)} bb</strong>.`
+        : `<strong>Meilleure option : ${data.best_action} (${data.best_ev.toFixed(2)} bb).</strong> Ton play (${userAct}) rapporte ${userRow["EV (bb)"].toFixed(2)} bb (écart : <strong>${diff} bb</strong>).`;
+    }
+
+    renderDeck();
+  </script>
+</body>
+</html>
